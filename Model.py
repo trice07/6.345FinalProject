@@ -1,9 +1,6 @@
 #!/usr/bin/env/python
 # coding: utf-8
 
-# In[55]:
-
-
 import os
 import torch
 import torch.nn as nn
@@ -12,10 +9,14 @@ import torch.optim as optim
 import pandas as pd
 # from skimage import io, transform
 import numpy as np
+from numpy import newaxis
 # import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
-train_features = "C:\\Users\\stick\\Documents\\MITJuniorYear\\6.345\\RawTrainingFeatures1.csv"
+train_features = ['./RawTrainingFeatures1.csv','./RawTrainingFeatures2.csv']
+import sys
+np.set_printoptions(threshold=sys.maxsize)
+from sklearn.model_selection import train_test_split
 
 # In[80]:
 
@@ -63,7 +64,6 @@ class Net(nn.Module):
 
 
 
-
 # In[72]:
 
 
@@ -84,7 +84,7 @@ initial_data = pd.read_csv(train_features,header=None)
 class EmotionDataset(Dataset):
     """Face Landmarks dataset."""
 
-    def __init__(self, csv_file_path, transform=None):
+    def __init__(self, csvs, transform=None,test=False):
         """
         Args:
             csv_file (string): Path to the csv file with annotations.
@@ -92,18 +92,32 @@ class EmotionDataset(Dataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        num_speakers = 250
-        self.emotions_frame = pd.read_csv(csv_file_path,header=None)
+        csv_file_path_1=csvs[0]
+        csv_file_path_2=csvs[1]
+        emotions_frame1 = pd.read_csv(csv_file_path_1,header=None)
+        emotions_frame2 = pd.read_csv(csv_file_path_2,header=None)
+        self.emotions_frame=pd.concat([emotions_frame1,emotions_frame2],ignore_index=True)
+#         self.emotions_frame=emotions_frame2
+#         print(self.emotions_frame)
+#         self.emotions_frame=emotions_frame1
+#         print(self.emotions_frame)
+#         self.emotions_frame,self.test_frames=train_test_split(self.emotions_frame,test_size=0.1)
+        if not(test):
+            self.emotions_frame,self.test_frames=train_test_split(self.emotions_frame,test_size=0.1,random_state=42,shuffle=False)
+        else:
+            self.test_frames=None
+        
+        num_speakers = 490 ##self.emotions_frame.shape[0]
         self.transform = transform
+        self.speaker_map={}
         features = self.emotions_frame.iloc[:, 1:-1].as_matrix()
         labels =self.emotions_frame.iloc[:,-1]
         speakers=self.emotions_frame.iloc[:,0]
         speaker_array = [""]*num_speakers
-        # features = features.astype('double').reshape(88)
-        # sample = {'speaker': speaker, 'label': label,'features':features}
-        # data=EmotionDataset(train_features)
-        j=0
+       
+        j=0 
         num_features = len(features)
+
         data_array=np.zeros((num_speakers,88,512),dtype='double')
         label2index = {
         "anger":0,
@@ -114,17 +128,20 @@ class EmotionDataset(Dataset):
         "sadness":5,
         "neutral":6
         }
+        
         label_array=['']*num_speakers
         for i in range(num_speakers):
             initialID= speakers[j]
+            speaker=initialID[1:3]
             speaker_array[i] = initialID
             temp_array= features[j, :]
             temp_array=np.reshape(temp_array,(88,1))
             j+=1
-            # new_label = np.zeroes(7)
+#             print(labels)
+#             print(j,num_features,speakers[j],initialID)
             idx = label2index[labels[j]]
-            # new_label[idx] = 1
             label_array[i]= idx
+           
             while j < num_features and speakers[j]==initialID:
                 temp_array = np.hstack((temp_array,np.reshape(features[j, :],(88,1))))
                 j+=1
@@ -134,110 +151,75 @@ class EmotionDataset(Dataset):
             elif temp_array.shape[1]>512:
                 temp_array=temp_array[:,:512]
             data_array[i]=temp_array
+            
+            if speaker in self.speaker_map:
+                self.speaker_map[speaker]=np.append(self.speaker_map[speaker],temp_array[newaxis,::],axis=0)
+            else:
+                self.speaker_map[speaker]=np.empty((1,88,512))
+                self.speaker_map[speaker][0,:,:]=temp_array
         self.features = data_array
         self.labels = label_array
         self.speakers = speaker_array
-
+        self.std_map={}
+        self.mean_map={}
+        for ID in self.speaker_map.keys():
+            std=np.std(self.speaker_map[ID],axis=(0,2))
+            std=std[:,newaxis]
+            std_zeros= std==0
+            std[std_zeros]=1
+            
+            mean=np.mean(self.speaker_map[ID],axis=(0,2))
+            mean=mean[:,newaxis]
+            for j in range(511):
+                std=np.insert(std,1,std[:,0],axis=1)
+                mean=np.insert(mean,1,mean[:,0],axis=1)
+            self.std_map[ID]=std
+            self.mean_map[ID]=mean
+    def get_test_csv(self):
+        return self.test_frame.to_csv()
     def __len__(self):
         return len(self.features)
-
+    
     def __getitem__(self, idx):
-        # features = self.emotions_frame.iloc[idx, 1:-1].as_matrix()
-        # label=self.emotions_frame.iloc[idx,-1]
-        # speaker=self.emotions_frame.iloc[idx,0]
-        # features = features.astype('double').reshape(88)
-        features = self.features[idx, :, :].astype("double")
-        features = transforms.ToTensor()(features)
         speaker = self.speakers[idx]
+        
+        features = self.features[idx, :, :].astype("double")
+        features=(features-self.mean_map[speaker[1:3]])/self.std_map[speaker[1:3]]
+        features = transforms.ToTensor()(features)
+        
         label = self.labels[idx]
         sample = {'speaker': speaker, 'label': label,'features':features}
         if self.transform:
             sample = self.transform(sample)
-
         return sample
+    
     
     
 
 
 # In[59]:
 
-
-
-##Extract a couple of vectors to train on
-data=EmotionDataset(train_features)
-# j=0
-# data_array=np.zeros((5000,88,512),dtype='double')
-# label_array=['']*5000
-# i=0
-# print(data.emotions_frame.head())
-# speaks = set(data.emotions_frame.iloc[:, 0])
-# print(len(speaks))
-# print(speaks)
-# print(data.emotions_frame.head())
-# print(len(data))
-# for i in range(250):
-#     print(i)
-#     info=data[j]
-#     initialID=info['speaker']
-#     temp_array=info['features']
-#     temp_array=np.reshape(temp_array,(88,1))
-#     j+=1
-#     info=data[j]
-#     label_array[i]=info["label"]
-#     while info['speaker']==initialID:
-#         temp_array = np.hstack((temp_array,np.reshape(info['features'],(88,1))))
-#         j+=1
-#         info=data[j]
-#     if temp_array.shape[1]<512:
-#         pad_length = 512-temp_array.shape[1]
-#         temp_array = np.pad(temp_array,((0, 0), (0, pad_length)),'constant')
-#     elif temp_array.shape[1]>512:
-#         temp_array=temp_array[:,:512]
-#     data_array[i]=temp_array
-# print("NUM", j)
-
-
-# In[42]:
-
-# In[81]:
-
-
 ## Code to train 
-# label2index = {
-#         "anger":0,
-#         "boredom":1,
-#         "disgust":2,
-#         "fear":3,
-#         "happiness":4,
-#         "sadness":5,
-#         "neutral":6
-#     }
-data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=10, shuffle=False)
+data=EmotionDataset(train_features)
+
+data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=64, shuffle=False)
 model=Net()
+model.cuda()
+cudnn.benchmark = True
+
 loss_fn = torch.nn.NLLLoss()
 learning_rate = 1e-4
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 running_loss = 0
-for epoch in range(1):
+for epoch in range(100):
     for sample in data_loader:
         features = sample["features"]
         label = torch.tensor(sample["label"])
-        # features=torch.from_numpy(sample)
-        # features=torch.unsqueeze(features,0)
-        # features=torch.unsqueeze(features,0)
         y_pred = model(features)
-        print(y_pred)
         loss=loss_fn(y_pred,label)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
     
-        # print statistics
-        # running_loss += loss.item()
-        # if i % 2000 == 1999:    # print every 2000 mini-batches
-        #     print('[%d, %5d] loss: %.3f' %
-        #           (epoch + 1, i + 1, running_loss / 2000))
-        #     running_loss = 0.0
 
 print('Finished Training')
-
