@@ -20,7 +20,7 @@ from numpy import newaxis
 # import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
-train_features = ['./6.345FinalProject/RawTrainingFeatures1.csv','./6.345FinalProject/RawTrainingFeatures2.csv']
+train_features = ['../6.345FinalProject/RawTrainingFeatures1.csv','../6.345FinalProject/RawTrainingFeatures2.csv']
 import sys
 np.set_printoptions(threshold=sys.maxsize)
 from sklearn.model_selection import train_test_split
@@ -115,7 +115,7 @@ class EmotionDataset(Dataset):
         
         num_speakers = 490 ##self.emotions_frame.shape[0]
         if (test):
-                num_speakers=50
+                num_speakers=45
         self.transform = transform
         self.speaker_map={}
         features = self.emotions_frame.iloc[:, 1:-1].as_matrix()
@@ -130,7 +130,7 @@ class EmotionDataset(Dataset):
 
         data_array=np.zeros((num_speakers,88,512),dtype='double')
         label2index = {
-        "anger":0,
+        "anger"m:0,
         "boredom":1,
         "disgust":2,
         "fear":3,
@@ -216,14 +216,14 @@ data=EmotionDataset(data.get_test_csv(),test=True)
 data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=4, shuffle=False)
 model=Net()
 model.cuda()
-model.load_state_dict(torch.load('mytraining.pt'))
+model.load_state_dict(torch.load('checkpoint.pth'))
 cudnn.benchmark = True
 
 print('started testing')
 correct=0
 total=4
 
-with torch.nograd():
+with torch.no_grad():
         for data in data_loader:
                 features=data['features']
                 labels=torch.tensor(data['label'])
