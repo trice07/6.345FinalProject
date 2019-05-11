@@ -7,17 +7,24 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import pandas as pd
+import torch.backends.cudnn as cudnn
+cudnn.enabled=False
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+print(device)
+
+
 # from skimage import io, transform
 import numpy as np
 from numpy import newaxis
 # import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
-train_features = ['./RawTrainingFeatures1.csv','./RawTrainingFeatures2.csv']
+train_features = ['./6.345FinalProject/RawTrainingFeatures1.csv','./6.345FinalProject/RawTrainingFeatures2.csv']
 import sys
 np.set_printoptions(threshold=sys.maxsize)
 from sklearn.model_selection import train_test_split
-
+torch.set_default_tensor_type('torch.cuda.FloatTensor')
 # In[80]:
 
 
@@ -69,7 +76,7 @@ class Net(nn.Module):
 
 # training 
 
-initial_data = pd.read_csv(train_features,header=None)
+#initial_data = pd.read_csv(train_features,header=None)
 
 
 # In[5]:
@@ -186,7 +193,7 @@ class EmotionDataset(Dataset):
         features = self.features[idx, :, :].astype("double")
         features=(features-self.mean_map[speaker[1:3]])/self.std_map[speaker[1:3]]
         features = transforms.ToTensor()(features)
-        
+        features = features.to(device)        
         label = self.labels[idx]
         sample = {'speaker': speaker, 'label': label,'features':features}
         if self.transform:
@@ -211,15 +218,35 @@ loss_fn = torch.nn.NLLLoss()
 learning_rate = 1e-4
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 running_loss = 0
-for epoch in range(100):
+print('started training')
+running_loss=0.0
+i=0
+j=0
+for epoch in range(1000):
+    #print('epoch iteration')
     for sample in data_loader:
         features = sample["features"]
         label = torch.tensor(sample["label"])
         y_pred = model(features)
+        #print(y_pred,label)
         loss=loss_fn(y_pred,label)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        running_loss+=loss.item()
+        i+=64
+       # print(loss.item())
     
+    if i>=1000:
+        i=0
+        j+=1
+        print('[%d,%5d] loss:%.3f' % (epoch+1,j,running_loss/1000))
+        running_loss=0
+    torch.save( model.state_dict(),'checkpoint_test.pth')
 
+    
 print('Finished Training')
+
+
+
+
