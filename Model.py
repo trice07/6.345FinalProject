@@ -20,7 +20,7 @@ from numpy import newaxis
 # import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
-train_features = ['./6.345FinalProject/RawTrainingFeatures1.csv','./6.345FinalProject/RawTrainingFeatures2.csv']
+train_features = ['./RawTrainingFeatures1.csv','./RawTrainingFeatures2.csv']
 import sys
 np.set_printoptions(threshold=sys.maxsize)
 from sklearn.model_selection import train_test_split
@@ -212,6 +212,7 @@ data=EmotionDataset(train_features)
 data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=64, shuffle=False)
 model=Net()
 model.cuda()
+model.load_state_dict(torch.load('checkpoint.pth'))
 cudnn.benchmark = True
 
 loss_fn = torch.nn.NLLLoss()
@@ -222,27 +223,24 @@ print('started training')
 running_loss=0.0
 i=0
 j=0
-for epoch in range(1000):
-    #print('epoch iteration')
+for epoch in range(10000):
     for sample in data_loader:
         features = sample["features"]
         label = torch.tensor(sample["label"])
         y_pred = model(features)
-        #print(y_pred,label)
         loss=loss_fn(y_pred,label)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         running_loss+=loss.item()
         i+=64
-       # print(loss.item())
     
     if i>=1000:
         i=0
         j+=1
         print('[%d,%5d] loss:%.3f' % (epoch+1,j,running_loss/1000))
         running_loss=0
-    torch.save( model.state_dict(),'checkpoint_test.pth')
+    torch.save( model.state_dict(),'checkpoint_test'+str(i)+'.pth')
 
     
 print('Finished Training')

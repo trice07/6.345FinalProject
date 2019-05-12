@@ -130,7 +130,7 @@ class EmotionDataset(Dataset):
 
         data_array=np.zeros((num_speakers,88,512),dtype='double')
         label2index = {
-        "anger"m:0,
+        "anger":0,
         "boredom":1,
         "disgust":2,
         "fear":3,
@@ -216,7 +216,7 @@ data=EmotionDataset(data.get_test_csv(),test=True)
 data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=4, shuffle=False)
 model=Net()
 model.cuda()
-model.load_state_dict(torch.load('checkpoint.pth'))
+model.load_state_dict(torch.load('checkpoint_test512.pth'))
 cudnn.benchmark = True
 
 print('started testing')
