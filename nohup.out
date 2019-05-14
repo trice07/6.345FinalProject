@@ -1,0 +1,9 @@
+Model.py:120: FutureWarning: Method .as_matrix will be removed in a future version. Use .values instead.
+  features = self.emotions_frame.iloc[:, 1:-1].as_matrix()
+cuda:0
+Traceback (most recent call last):
+  File "Model.py", line 210, in <module>
+    data=EmotionDataset(train_features)
+  File "Model.py", line 153, in __init__
+    temp_array = np.hstack((temp_array,np.reshape(features[j, :],(88,1))))
+KeyboardInterrupt

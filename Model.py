@@ -1,6 +1,5 @@
 #!/usr/bin/env/python
 # coding: utf-8
-
 import os
 import torch
 import torch.nn as nn
@@ -109,12 +108,12 @@ class EmotionDataset(Dataset):
 #         self.emotions_frame=emotions_frame1
 #         print(self.emotions_frame)
 #         self.emotions_frame,self.test_frames=train_test_split(self.emotions_frame,test_size=0.1)
-        if not(test):
-            self.emotions_frame,self.test_frames=train_test_split(self.emotions_frame,test_size=0.1,random_state=42,shuffle=False)
-        else:
-            self.test_frames=None
+#         if not(test):
+#             self.emotions_frame,self.test_frames=train_test_split(self.emotions_frame,test_size=0.1,random_state=42,shuffle=False)
+#         else:
+        self.test_frames=None
         
-        num_speakers = 490 ##self.emotions_frame.shape[0]
+        num_speakers = 535 ##self.emotions_frame.shape[0]
         self.transform = transform
         self.speaker_map={}
         features = self.emotions_frame.iloc[:, 1:-1].as_matrix()
@@ -186,6 +185,21 @@ class EmotionDataset(Dataset):
         return self.test_frame.to_csv()
     def __len__(self):
         return len(self.features)
+    def filter_speakers(self, speaker):
+        to_remove = []
+        test_remove = []
+        for i in range(len(self.speakers)):
+            current_speaker = self.speakers[i][1:3]
+            if current_speaker == speaker:
+                to_remove.append(i)
+            else:
+                test_remove.append(i)
+        # self.test_frames = np.delete(self.features, test_remove, axis=0)
+        # self.test_labels = np.delete(self.labels, test_remove)
+        self.features = np.delete(self.features, to_remove, axis=0)
+        self.labels = [x for i, x in enumerate(self.labels) if i not in to_remove]
+        # self.labels = np.delete(self.labels, to_remove)
+
     
     def __getitem__(self, idx):
         speaker = self.speakers[idx]
@@ -209,40 +223,66 @@ class EmotionDataset(Dataset):
 ## Code to train 
 data=EmotionDataset(train_features)
 
-data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=64, shuffle=False)
-model=Net()
-model.cuda()
-model.load_state_dict(torch.load('checkpoint.pth'))
-cudnn.benchmark = True
+# data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=64, shuffle=False)
+# model=Net()
+# model.cuda()
+# # model.load_state_dict(torch.load('checkpoint_test0.pth'))
+# cudnn.benchmark = True
+#
+# loss_fn = torch.nn.NLLLoss()
+# learning_rate = 1e-3
+# optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+# running_loss = 0
+# print('started training')
+# running_loss=0.0
+# i=0
+# j=0
+import time
+start_time = time.time()
+# output_results_file = "Results.csv"
+# f = open(output_results_file, "w")
+for speaker in data.speaker_map:
+    data=EmotionDataset(train_features)
+    data.filter_speakers(speaker)
+    model=Net()
+    model.cuda()
+    # model.load_state_dict(torch.load('checkpoint_test0.pth'))
+    cudnn.benchmark = True
 
-loss_fn = torch.nn.NLLLoss()
-learning_rate = 1e-4
-optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-running_loss = 0
-print('started training')
-running_loss=0.0
-i=0
-j=0
-for epoch in range(10000):
-    for sample in data_loader:
-        features = sample["features"]
-        label = torch.tensor(sample["label"])
-        y_pred = model(features)
-        loss=loss_fn(y_pred,label)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        running_loss+=loss.item()
-        i+=64
-    
-    if i>=1000:
-        i=0
-        j+=1
-        print('[%d,%5d] loss:%.3f' % (epoch+1,j,running_loss/1000))
-        running_loss=0
-    torch.save( model.state_dict(),'checkpoint_test'+str(i)+'.pth')
+    loss_fn = torch.nn.NLLLoss()
+    learning_rate = 1e-3
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    running_loss = 0
+    print('started training')
+    running_loss=0.0
+    i=0
+    j=0
+    data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=64, shuffle=False)
+    for epoch in range(1000):
+        for sample in data_loader:
+            features = sample["features"]
+            label = torch.tensor(sample["label"])
+            y_pred = model(features)
+            loss=loss_fn(y_pred,label)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            running_loss+=loss.item()
+            i+=64
 
-    
+        if i>=100:
+            i=0
+            j+=1
+            print('[%d,%5d] loss:%.3f' % (epoch+1,j,running_loss/1000))
+            running_loss=0
+        if epoch % 1000 == 0:
+            torch.save( model.state_dict(),'checkpoint_test'+str(i)+'.pth')
+
+        print("Epoch" + str(epoch) + "Finished")
+        end_time = time.time()
+        print("Time Elapsed" + str(end_time - start_time))
+    torch.save( model.state_dict(),'checkpoint_test_val'+str(speaker)+'.pth')
+# f.close()
 print('Finished Training')
 
 

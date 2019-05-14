@@ -108,14 +108,14 @@ class EmotionDataset(Dataset):
         else:
                 self.emotions_frame=csvs.reset_index(drop=True)
                 
-        if not(test):
-            self.emotions_frame,self.test_frames=train_test_split(self.emotions_frame,test_size=0.1,random_state=42,shuffle=False)
-        else:
-            self.test_frames=None
+        # if not test:
+        #     self.emotions_frame,self.test_frames=train_test_split(self.emotions_frame,test_size=0.1,random_state=42,shuffle=False)
+        # else:
+        #     self.test_frames=None
         
-        num_speakers = 490 ##self.emotions_frame.shape[0]
+        num_speakers = 535 ##self.emotions_frame.shape[0]
         if (test):
-                num_speakers=45
+                num_speakers=53
         self.transform = transform
         self.speaker_map={}
         features = self.emotions_frame.iloc[:, 1:-1].as_matrix()
@@ -212,7 +212,7 @@ class EmotionDataset(Dataset):
 
 ## Code to train 
 data=EmotionDataset(train_features)
-data=EmotionDataset(data.get_test_csv(),test=True)
+# data=EmotionDataset(data.get_test_csv(),test=True)
 data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=4, shuffle=False)
 model=Net()
 model.cuda()
