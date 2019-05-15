@@ -25,8 +25,11 @@ np.set_printoptions(threshold=sys.maxsize)
 from sklearn.model_selection import train_test_split
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 # In[80]:
-
-
+original_feature_indices = [0, 10, 22, 24, 26, 28, 30, 32, 34, 35, 36, 40, 43, 52, 56, 57, 66, 76, 77, 80]
+# nf = 88
+# original_feature_indices= [0, 10, 22, 24, 26, 27, 28, 30, 32, 34, 35, 36, 40,42, 43,44,45, 52, 56, 57, 62, 66, 76, 77, 80]
+# nf = 20
+nf = len(original_feature_indices)
 class Net(nn.Module):
 
     def __init__(self):
@@ -34,11 +37,10 @@ class Net(nn.Module):
         # 1 input image channel, 64 output channels, 1x6  convolution
         # kernel
         self.local_conv = nn.Conv2d(in_channels=1, out_channels=64, kernel_size=(1,6), padding=(0, 2))
-        
+        self.drop_out = nn.Dropout(p=.5)
         # 64 input channels (check this?), feature maps from local convolution,
         # 128 output channels, 20x2 kernel (check this?)
-        self.global_conv=nn.Conv2d(64,128,(88,2))
-        
+        self.global_conv=nn.Conv2d(64,128,(nf,2))
         #LSTM layer,48 cells each
         self.dec=nn.LSTM(128,48,2,dropout=0.25)
         
@@ -50,10 +52,12 @@ class Net(nn.Module):
         # Apply ReLu units to the results of convolution, local convoltion layer
         x=x.float()
         x=F.relu(self.local_conv(x))
+        # x = self.drop_out(x)
         x = nn.ZeroPad2d((0,1,0,0))(x)
         x=nn.MaxPool2d(kernel_size=(1,4))(x)
         #Global convolution layer
         x=F.relu(self.global_conv(x))
+        # x = self.drop_out(x)
         x = nn.ZeroPad2d((0,1,0,0))(x)
         x=nn.MaxPool2d(kernel_size=(1,2))(x)
         # remove second dimension
@@ -112,11 +116,13 @@ class EmotionDataset(Dataset):
 #             self.emotions_frame,self.test_frames=train_test_split(self.emotions_frame,test_size=0.1,random_state=42,shuffle=False)
 #         else:
         self.test_frames=None
-        
+        self.test_labels = None
+        self.test = False
         num_speakers = 535 ##self.emotions_frame.shape[0]
         self.transform = transform
         self.speaker_map={}
         features = self.emotions_frame.iloc[:, 1:-1].as_matrix()
+        features = np.take(features, original_feature_indices, axis=1)
         labels =self.emotions_frame.iloc[:,-1]
         speakers=self.emotions_frame.iloc[:,0]
         speaker_array = [""]*num_speakers
@@ -124,7 +130,7 @@ class EmotionDataset(Dataset):
         j=0 
         num_features = len(features)
 
-        data_array=np.zeros((num_speakers,88,512),dtype='double')
+        data_array=np.zeros((num_speakers,nf,512),dtype='double')
         label2index = {
         "anger":0,
         "boredom":1,
@@ -141,7 +147,7 @@ class EmotionDataset(Dataset):
             speaker=initialID[1:3]
             speaker_array[i] = initialID
             temp_array= features[j, :]
-            temp_array=np.reshape(temp_array,(88,1))
+            temp_array=np.reshape(temp_array,(nf,1))
             j+=1
 #             print(labels)
 #             print(j,num_features,speakers[j],initialID)
@@ -149,7 +155,7 @@ class EmotionDataset(Dataset):
             label_array[i]= idx
            
             while j < num_features and speakers[j]==initialID:
-                temp_array = np.hstack((temp_array,np.reshape(features[j, :],(88,1))))
+                temp_array = np.hstack((temp_array,np.reshape(features[j, :],(nf,1))))
                 j+=1
             if temp_array.shape[1]<512:
                 pad_length = 512-temp_array.shape[1]
@@ -161,7 +167,7 @@ class EmotionDataset(Dataset):
             if speaker in self.speaker_map:
                 self.speaker_map[speaker]=np.append(self.speaker_map[speaker],temp_array[newaxis,::],axis=0)
             else:
-                self.speaker_map[speaker]=np.empty((1,88,512))
+                self.speaker_map[speaker]=np.empty((1,nf,512))
                 self.speaker_map[speaker][0,:,:]=temp_array
         self.features = data_array
         self.labels = label_array
@@ -184,6 +190,8 @@ class EmotionDataset(Dataset):
     def get_test_csv(self):
         return self.test_frame.to_csv()
     def __len__(self):
+        if self.test:
+            return len(self.test_frames)
         return len(self.features)
     def filter_speakers(self, speaker):
         to_remove = []
@@ -194,21 +202,24 @@ class EmotionDataset(Dataset):
                 to_remove.append(i)
             else:
                 test_remove.append(i)
-        # self.test_frames = np.delete(self.features, test_remove, axis=0)
-        # self.test_labels = np.delete(self.labels, test_remove)
+        self.test_frames = np.delete(self.features, test_remove, axis=0)
+        self.test_labels = [x for i, x in enumerate(self.labels) if i not in test_remove]
         self.features = np.delete(self.features, to_remove, axis=0)
         self.labels = [x for i, x in enumerate(self.labels) if i not in to_remove]
-        # self.labels = np.delete(self.labels, to_remove)
 
     
     def __getitem__(self, idx):
         speaker = self.speakers[idx]
-        
-        features = self.features[idx, :, :].astype("double")
+        if self.test:
+            features = self.test_frames[idx, :, :].astype("double")
+            label = self.test_labels[idx]
+        else:
+            features = self.features[idx, :, :].astype("double")
+            label = self.labels[idx]
         features=(features-self.mean_map[speaker[1:3]])/self.std_map[speaker[1:3]]
         features = transforms.ToTensor()(features)
         features = features.to(device)        
-        label = self.labels[idx]
+
         sample = {'speaker': speaker, 'label': label,'features':features}
         if self.transform:
             sample = self.transform(sample)
@@ -241,12 +252,13 @@ import time
 start_time = time.time()
 # output_results_file = "Results.csv"
 # f = open(output_results_file, "w")
-for speaker in data.speaker_map:
+first = True
+for speaker in sorted(list(data.speaker_map))[3:]:
     data=EmotionDataset(train_features)
     data.filter_speakers(speaker)
     model=Net()
     model.cuda()
-    # model.load_state_dict(torch.load('checkpoint_test0.pth'))
+    # model.load_state_dict(torch.load('checkpoint_test_val'+str(speaker)+'.pth'))
     cudnn.benchmark = True
 
     loss_fn = torch.nn.NLLLoss()
@@ -257,8 +269,14 @@ for speaker in data.speaker_map:
     running_loss=0.0
     i=0
     j=0
-    data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=64, shuffle=False)
-    for epoch in range(1000):
+    best_testing_accuracy = 0
+    data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=64, shuffle=True)
+    for epoch in range(300):
+        total = 0
+        correct = 0
+        total_test = 0
+        correct_test = 0
+        model.train()
         for sample in data_loader:
             features = sample["features"]
             label = torch.tensor(sample["label"])
@@ -269,6 +287,26 @@ for speaker in data.speaker_map:
             optimizer.step()
             running_loss+=loss.item()
             i+=64
+
+            _,predicted=torch.max(y_pred.data,1)
+            total+=label.size(0)
+            correct+=(predicted==label).sum().item()
+        data.test = True
+        data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=64, shuffle=False)
+        model.eval()
+
+        for sample in data_loader:
+            features = sample["features"]
+            test_pred = model(features)
+            test_labels = torch.tensor(sample["label"])
+            _ ,test_predicted=torch.max(test_pred.data,1)
+            total_test+=test_labels.size(0)
+            correct_test+=(test_predicted==test_labels).sum().item()
+            # for i in range(test_labels.size(0)):
+            #     if test_labels[i] != test_predicted[i]:
+            #         print(test_labels[i].data, test_predicted[i].data)
+        data.test = False
+
 
         if i>=100:
             i=0
@@ -281,7 +319,13 @@ for speaker in data.speaker_map:
         print("Epoch" + str(epoch) + "Finished")
         end_time = time.time()
         print("Time Elapsed" + str(end_time - start_time))
-    torch.save( model.state_dict(),'checkpoint_test_val'+str(speaker)+'.pth')
+        print('Training Accuracy: %d %%' % (100*correct/total))
+        print('Testing Accuracy: %d %%' % (100*correct_test/total_test))
+        print('Best Testing Accuracy: %d %%' % (100*best_testing_accuracy))
+        if correct_test/total_test >= best_testing_accuracy:
+            best_testing_accuracy = correct_test/total_test
+            torch.save( model.state_dict(),'checkpoint_test20_val'+str(speaker)+'.pth')
+    # torch.save( model.state_dict(),'checkpoint_test2_val'+str(speaker)+'.pth')
 # f.close()
 print('Finished Training')
 

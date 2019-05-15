@@ -115,7 +115,7 @@ class EmotionDataset(Dataset):
         
         num_speakers = 535 ##self.emotions_frame.shape[0]
         if (test):
-                num_speakers=53
+                num_speakers=535
         self.transform = transform
         self.speaker_map={}
         features = self.emotions_frame.iloc[:, 1:-1].as_matrix()
@@ -190,6 +190,20 @@ class EmotionDataset(Dataset):
         return self.test_frames
     def __len__(self):
         return len(self.features)
+    def filter_speakers(self, speaker):
+        to_remove = []
+        test_remove = []
+        for i in range(len(self.speakers)):
+            current_speaker = self.speakers[i][1:3]
+            if current_speaker != speaker:
+                to_remove.append(i)
+            else:
+                test_remove.append(i)
+        # self.test_frames = np.delete(self.features, test_remove, axis=0)
+        # self.test_labels = np.delete(self.labels, test_remove)
+        self.features = np.delete(self.features, to_remove, axis=0)
+        self.labels = [x for i, x in enumerate(self.labels) if i not in to_remove]
+        # self.labels = np.delete(self.labels, to_remove)
     
     def __getitem__(self, idx):
         speaker = self.speakers[idx]
@@ -216,24 +230,39 @@ data=EmotionDataset(train_features)
 data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=4, shuffle=False)
 model=Net()
 model.cuda()
-model.load_state_dict(torch.load('checkpoint_test512.pth'))
+# model.load_state_dict(torch.load('checkpoint_test512.pth'))
 cudnn.benchmark = True
 
 print('started testing')
 correct=0
 total=4
 
-with torch.no_grad():
-        for data in data_loader:
-                features=data['features']
-                labels=torch.tensor(data['label'])
-                outputs=model(features)
-                _,predicted=torch.max(outputs.data,1)
-                print(labels.size())
-                total+=labels.size(0)
-                correct+=(predicted==labels).sum().item()
-print('Finished Testing')
-print('Accuracy on last speaker (left out): %d %%' % (100*correct/total))
+
+for speaker in sorted(list(data.speaker_map.keys())):
+
+        correct=0
+        total=0
+        data=EmotionDataset(train_features)
+        data.filter_speakers(speaker)
+        with torch.no_grad():
+                model=Net()
+                model.cuda()
+
+                model.load_state_dict(torch.load('checkpoint_test_val'+str(speaker)+'.pth'))
+                model.eval()
+                # model.load_state_dict(torch.load('checkpoint_test0.pth'))
+                data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=64, shuffle=False)
+                for data in data_loader:
+                        features=data['features']
+                        labels=torch.tensor(data['label'])
+
+                        outputs=model(features)
+                        _,predicted=torch.max(outputs.data,1)
+                        print(labels.size())
+                        total+=labels.size(0)
+                        correct+=(predicted==labels).sum().item()
+                print('Finished Testing Speaker ', speaker)
+                print('Accuracy on last speaker (left out): %d %%' % (100*correct/total))
 
 
 
