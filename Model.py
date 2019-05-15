@@ -26,10 +26,8 @@ from sklearn.model_selection import train_test_split
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 # In[80]:
 original_feature_indices = [0, 10, 22, 24, 26, 28, 30, 32, 34, 35, 36, 40, 43, 52, 56, 57, 66, 76, 77, 80]
-# nf = 88
-# original_feature_indices= [0, 10, 22, 24, 26, 27, 28, 30, 32, 34, 35, 36, 40,42, 43,44,45, 52, 56, 57, 62, 66, 76, 77, 80]
-# nf = 20
-nf = len(original_feature_indices)
+# nf = len(original_feature_indices)
+nf = 88
 class Net(nn.Module):
 
     def __init__(self):
@@ -42,7 +40,7 @@ class Net(nn.Module):
         # 128 output channels, 20x2 kernel (check this?)
         self.global_conv=nn.Conv2d(64,128,(nf,2))
         #LSTM layer,48 cells each
-        self.dec=nn.LSTM(128,48,2,dropout=0.25)
+        self.dec=nn.LSTM(128,48,2,dropout=0.5)
         
         # Size of output of LSTM, for now use # of hiden state features
         self.denseFF=nn.Linear(48,7)
@@ -51,13 +49,14 @@ class Net(nn.Module):
     def forward(self, x):
         # Apply ReLu units to the results of convolution, local convoltion layer
         x=x.float()
+        x = self.drop_out(x)
         x=F.relu(self.local_conv(x))
-        # x = self.drop_out(x)
+        x = self.drop_out(x)
         x = nn.ZeroPad2d((0,1,0,0))(x)
         x=nn.MaxPool2d(kernel_size=(1,4))(x)
         #Global convolution layer
         x=F.relu(self.global_conv(x))
-        # x = self.drop_out(x)
+        x = self.drop_out(x)
         x = nn.ZeroPad2d((0,1,0,0))(x)
         x=nn.MaxPool2d(kernel_size=(1,2))(x)
         # remove second dimension
@@ -122,7 +121,7 @@ class EmotionDataset(Dataset):
         self.transform = transform
         self.speaker_map={}
         features = self.emotions_frame.iloc[:, 1:-1].as_matrix()
-        features = np.take(features, original_feature_indices, axis=1)
+        # features = np.take(features, original_feature_indices, axis=1)
         labels =self.emotions_frame.iloc[:,-1]
         speakers=self.emotions_frame.iloc[:,0]
         speaker_array = [""]*num_speakers
@@ -253,12 +252,14 @@ start_time = time.time()
 # output_results_file = "Results.csv"
 # f = open(output_results_file, "w")
 first = True
-for speaker in sorted(list(data.speaker_map))[3:]:
+for speaker in sorted(list(data.speaker_map))[1:]:
+    speaker = "15"
     data=EmotionDataset(train_features)
     data.filter_speakers(speaker)
     model=Net()
     model.cuda()
-    # model.load_state_dict(torch.load('checkpoint_test_val'+str(speaker)+'.pth'))
+
+    # model.load_state_dict(torch.load('checkpoint_test88_val'+str(speaker)+'.pth'))
     cudnn.benchmark = True
 
     loss_fn = torch.nn.NLLLoss()
@@ -271,7 +272,7 @@ for speaker in sorted(list(data.speaker_map))[3:]:
     j=0
     best_testing_accuracy = 0
     data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=64, shuffle=True)
-    for epoch in range(300):
+    for epoch in range(700):
         total = 0
         correct = 0
         total_test = 0
@@ -313,8 +314,8 @@ for speaker in sorted(list(data.speaker_map))[3:]:
             j+=1
             print('[%d,%5d] loss:%.3f' % (epoch+1,j,running_loss/1000))
             running_loss=0
-        if epoch % 1000 == 0:
-            torch.save( model.state_dict(),'checkpoint_test'+str(i)+'.pth')
+        # if epoch % 1000 == 0:
+        #     torch.save( model.state_dict(),'checkpoint_test'+str(i)+'.pth')
 
         print("Epoch" + str(epoch) + "Finished")
         end_time = time.time()
@@ -324,7 +325,8 @@ for speaker in sorted(list(data.speaker_map))[3:]:
         print('Best Testing Accuracy: %d %%' % (100*best_testing_accuracy))
         if correct_test/total_test >= best_testing_accuracy:
             best_testing_accuracy = correct_test/total_test
-            torch.save( model.state_dict(),'checkpoint_test20_val'+str(speaker)+'.pth')
+            # torch.save( model.state_dict(),'checkpoint_test88_val'+str(speaker)+'.pth')
+    exit()
     # torch.save( model.state_dict(),'checkpoint_test2_val'+str(speaker)+'.pth')
 # f.close()
 print('Finished Training')

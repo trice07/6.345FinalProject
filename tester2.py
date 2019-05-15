@@ -26,8 +26,9 @@ np.set_printoptions(threshold=sys.maxsize)
 from sklearn.model_selection import train_test_split
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
 # In[80]:
-
-
+original_feature_indices = [0, 10, 22, 24, 26, 28, 30, 32, 34, 35, 36, 40, 43, 52, 56, 57, 66, 76, 77, 80]
+# nf = len(original_feature_indices)
+nf = 88
 class Net(nn.Module):
 
     def __init__(self):
@@ -38,7 +39,7 @@ class Net(nn.Module):
         
         # 64 input channels (check this?), feature maps from local convolution,
         # 128 output channels, 20x2 kernel (check this?)
-        self.global_conv=nn.Conv2d(64,128,(88,2))
+        self.global_conv=nn.Conv2d(64,128,(nf,2))
         
         #LSTM layer,48 cells each
         self.dec=nn.LSTM(128,48,2,dropout=0.25)
@@ -119,6 +120,7 @@ class EmotionDataset(Dataset):
         self.transform = transform
         self.speaker_map={}
         features = self.emotions_frame.iloc[:, 1:-1].as_matrix()
+        # features = np.take(features, original_feature_indices, axis=1)
         labels =self.emotions_frame.iloc[:,-1]
         speakers=self.emotions_frame.iloc[:,0]
         print('speaker size:')
@@ -128,7 +130,7 @@ class EmotionDataset(Dataset):
         j=0 
         num_features = len(features)
 
-        data_array=np.zeros((num_speakers,88,512),dtype='double')
+        data_array=np.zeros((num_speakers,nf,512),dtype='double')
         label2index = {
         "anger":0,
         "boredom":1,
@@ -145,7 +147,7 @@ class EmotionDataset(Dataset):
             speaker=initialID[1:3]
             speaker_array[i] = initialID
             temp_array= features[j, :]
-            temp_array=np.reshape(temp_array,(88,1))
+            temp_array=np.reshape(temp_array,(nf,1))
             j+=1
 #            print(j)
 #             print(labels)
@@ -154,7 +156,7 @@ class EmotionDataset(Dataset):
             label_array[i]= idx
            
             while j < num_features and speakers[j]==initialID:
-                temp_array = np.hstack((temp_array,np.reshape(features[j, :],(88,1))))
+                temp_array = np.hstack((temp_array,np.reshape(features[j, :],(nf,1))))
                 j+=1
             if temp_array.shape[1]<512:
                 pad_length = 512-temp_array.shape[1]
@@ -166,7 +168,7 @@ class EmotionDataset(Dataset):
             if speaker in self.speaker_map:
                 self.speaker_map[speaker]=np.append(self.speaker_map[speaker],temp_array[newaxis,::],axis=0)
             else:
-                self.speaker_map[speaker]=np.empty((1,88,512))
+                self.speaker_map[speaker]=np.empty((1,nf,512))
                 self.speaker_map[speaker][0,:,:]=temp_array
         self.features = data_array
         self.labels = label_array
@@ -237,7 +239,7 @@ print('started testing')
 correct=0
 total=4
 
-
+total_avg = 0
 for speaker in sorted(list(data.speaker_map.keys())):
 
         correct=0
@@ -248,7 +250,7 @@ for speaker in sorted(list(data.speaker_map.keys())):
                 model=Net()
                 model.cuda()
 
-                model.load_state_dict(torch.load('checkpoint_test_val'+str(speaker)+'.pth'))
+                model.load_state_dict(torch.load('checkpoint_test88_val'+str(speaker)+'.pth'))
                 model.eval()
                 # model.load_state_dict(torch.load('checkpoint_test0.pth'))
                 data_loader = torch.utils.data.DataLoader(dataset=data, batch_size=64, shuffle=False)
@@ -263,7 +265,8 @@ for speaker in sorted(list(data.speaker_map.keys())):
                         correct+=(predicted==labels).sum().item()
                 print('Finished Testing Speaker ', speaker)
                 print('Accuracy on last speaker (left out): %d %%' % (100*correct/total))
-
+                total_avg += correct/total
+print("Total Average: ", total_avg/10)
 
 
 
